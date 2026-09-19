@@ -95,5 +95,5 @@ You can monitor the browser while the script is running.
 youtube-subscription-cleaner/
 │
 ├── README.md
-├── unsubscribe.js
-└── LICENSE
+├── LICENSE
+└── unsubscribe.js
