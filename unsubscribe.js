@@ -1,37 +1,106 @@
-(async function iife() {
-    var UNSUBSCRIBE_DELAY_TIME = 100;
-    var CONFIRM_DELAY_TIME = 100;
+(async function() {
+    const sleep = ms => new Promise(res => setTimeout(res, ms));
+    let totalUnsubbed = 0;
 
-    var runAfterDelay = (fn, delay) => new Promise((resolve, reject) =>
-        setTimeout(() => {
-            fn();
-            resolve();
-        }, delay)
-    );
+    console.log("🚀 Starting Auto-Unsubscriber (With Smart Polling)...");
 
-    var channels = Array.from(document.querySelectorAll(
-        '.yt-spec-button-shape-next.yt-spec-button-shape-next--tonal.yt-spec-button-shape-next--size-m.yt-spec-button-shape-next--icon-leading-trailing'
-    ));
+    
+    function safeClick(element) {
+        if (!element) return;
+        const actualButton = element.tagName.toLowerCase() === 'button' ? element : (element.querySelector('button') || element);
+        actualButton.click();
+    }
 
-    console.log(`${channels.length} channels found.`);
+    // Smart Wait: Checks the screen every 100ms for an element instead of blind guessing
+    async function waitForVisibleElement(selector, textMatch, timeout = 3000) {
+        const start = Date.now();
+        while (Date.now() - start < timeout) {
+            const elements = Array.from(document.querySelectorAll(selector));
+            const target = elements.find(el => {
+                const text = (el.innerText || el.textContent || '').trim();
+                // offsetParent ensures the element is physically painted on the screen
+                const isVisible = el.getBoundingClientRect().width > 0 && el.offsetParent !== null;
+                return isVisible && (text === textMatch || textMatch === '');
+            });
+            if (target) return target;
+            await sleep(100);
+        }
+        return null; // Timed out
+    }
 
-    for (const channel of channels) {
-        channel.click();
+    while (true) {
+        
+        const buttons = Array.from(document.querySelectorAll('ytd-subscribe-button-renderer, yt-button-shape'))
+            .filter(btn => {
+                const text = (btn.innerText || '').trim();
+                const isVisible = btn.getBoundingClientRect().width > 0 && btn.offsetParent !== null;
+                const notSkipped = !btn.hasAttribute('data-skip');
+                return isVisible && notSkipped && text.includes('Subscribed');
+            });
 
-        await runAfterDelay(() => {
-            var dis = Array.from(
-                document.querySelectorAll(".style-scope.ytd-menu-popup-renderer")
-            );
+        if (buttons.length === 0) {
+            console.log("🔄 Scrolling down to load more...");
+            const prevHeight = document.documentElement.scrollHeight;
+            window.scrollTo(0, prevHeight);
+            await sleep(3000); 
+            
+            if (document.documentElement.scrollHeight === prevHeight) {
+                console.log(`✅ Finished! Total unsubscribed: ${totalUnsubbed}`);
+                break;
+            }
+            continue; 
+        }
 
-            dis[4].click();
-        }, UNSUBSCRIBE_DELAY_TIME);
+        const targetBtn = buttons[0]; 
+        targetBtn.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        await sleep(500); 
 
-        await runAfterDelay(() => {}, CONFIRM_DELAY_TIME);
+        try {
+            console.log("Step 1: Clicking 'Subscribed' button...");
+            safeClick(targetBtn);
+            
+            
+            const unsubMenuItem = await waitForVisibleElement('ytd-menu-service-item-renderer, tp-yt-paper-item', 'Unsubscribe', 3000);
 
-        await runAfterDelay(() => {
-            document.getElementById('confirm-button')
-                .getElementsByTagName('button')[0]
-                .click();
-        }, 0);
+            if (unsubMenuItem) {
+                console.log("Step 2: Clicking 'Unsubscribe' from dropdown...");
+                safeClick(unsubMenuItem);
+                
+                
+                const confirmDialog = await waitForVisibleElement('yt-confirm-dialog-renderer', '', 3000);
+                
+                if (confirmDialog) {
+                    let finalBtn = confirmDialog.querySelector('#confirm-button');
+                    if (!finalBtn) {
+                        finalBtn = Array.from(confirmDialog.querySelectorAll('yt-button-shape, button'))
+                                        .find(b => (b.innerText || '').trim() === 'Unsubscribe');
+                    }
+
+                    if (finalBtn) {
+                        console.log("Step 3: Clicking final confirmation...");
+                        safeClick(finalBtn);
+                        totalUnsubbed++;
+                        await sleep(1000); // Let YouTube server process it before moving to the next
+                    } else {
+                        console.log("⚠️ Could not find confirm button. Skipping.");
+                        targetBtn.setAttribute('data-skip', 'true');
+                        document.body.click(); 
+                    }
+                } else {
+                    console.log("✅ Unsubscribed directly without popup.");
+                    totalUnsubbed++;
+                    await sleep(1000);
+                }
+            } else {
+                console.log("⚠️ Dropdown didn't appear. Skipping fake button.");
+                targetBtn.setAttribute('data-skip', 'true');
+                document.body.click(); 
+                await sleep(500);
+            }
+        } catch (err) {
+            console.error("❌ Error processing channel.", err);
+            targetBtn.setAttribute('data-skip', 'true');
+            document.body.click();
+        }
     }
 })();
