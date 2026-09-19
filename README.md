@@ -1,11 +1,6 @@
 # YoutubeUnsubscriber
 This code help you unsubscribe Youtube channels by running a code in your browser dev tools.
 
-# YouTube Subscription Cleaner
-
-A simple JavaScript automation script that helps you quickly unsubscribe
-from multiple YouTube channels using your browser's Developer Console.
-
 ## Features
 
 - Automatically detects subscribed channels
